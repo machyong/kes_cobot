@@ -1,0 +1,28 @@
+color_roi_node:
+  ros__parameters:
+    image_topic: "/camera/camera/color/image_raw"
+    roi_x: 450
+    roi_y: 150
+    roi_w: 20
+    roi_h: 20
+    min_ratio: 0.02
+    blur_kernel: 5
+
+    colors:
+      red:
+        - lower: [0, 100, 80]
+          upper: [10, 255, 255]
+        - lower: [170, 100, 80]
+          upper: [180, 255, 255]
+      green:
+        - lower: [35, 60, 60]
+          upper: [85, 255, 255]
+      blue:
+        - lower: [95, 60, 60]
+          upper: [135, 255, 255]
+      yellow:
+        - lower: [20, 120, 80]
+          upper: [32, 255, 255]
+      orange:
+        - lower: [10, 120, 80]
+          upper: [20, 255, 255]
