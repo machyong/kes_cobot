@@ -14,7 +14,9 @@ sudo apt install librealsense2-utils librealsense2-dev librealsense2-dbg -y
 ```
 
 2. 연결확인
+```
 lsusb | grep Intels
+```
 
 3. ROS2 사용
 ```
