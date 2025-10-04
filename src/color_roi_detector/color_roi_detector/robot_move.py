@@ -7,7 +7,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
-from pymycobot.mycobot import MyCobot
+# from pymycobot.mycobot import MyCobot
 import time
 
 

@@ -2,10 +2,9 @@
 import rclpy
 from rclpy.node import Node
 from std_srvs.srv import Trigger
-from mycobot_interfaces.srv import Move
+from mycobot_interfaces.srv import Move   # ← 실제 move_node의 srv 타입으로 교체
 import numpy as np
 import cv2
-
 class ChatClient(Node):
     def __init__(self):
         super().__init__('chat_client')
@@ -25,33 +24,27 @@ class ChatClient(Node):
         while not self.move_cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('move_service 대기중...')
 
-        self.color_list = []
-
-        # 첫 호출 시작
+        # chat_service → move_service 실행
         self.call_chat_service()
-
-    # === chat_service 호출 ===
+        self.color_list = []
     def call_chat_service(self):
         req = Trigger.Request()
         future = self.chat_cli.call_async(req)
         future.add_done_callback(self.handle_chat_response)
 
-    # === chat_service 응답 처리 ===
     def handle_chat_response(self, future):
         try:
             response = future.result()
             if response.success:
                 self.get_logger().info(f"[chat_service 응답] {response.message}")
-
-                # 응답 문자열 파싱
-                self.color_list = []
-                k2 = response.message.split("/")
+                k = response.message
+                k2 = k.split("/")
                 for i in range(3):
-                    a = k2[i].replace(' ', '').split(":")[-1].strip('(').strip(")")
+                    a = k2[i].replace(' ','').split(":")[-1].strip('(').strip(")")
                     self.color_list.append(a)
-                m, n = self.color_list[0].split(',')
+                m,n = self.color_list[0].split(',')
 
-                # 픽셀 → 로봇 좌표 변환
+                # 좌표 변환
                 u, v = int(m), int(n)
                 uv_h = np.array([[[u, v]]], dtype=np.float32)
                 XY = cv2.perspectiveTransform(uv_h, self.H)
@@ -61,7 +54,7 @@ class ChatClient(Node):
                 self.get_logger().info(f"픽셀: ({u},{v}) → 로봇: {xy_str}")
                 self.get_logger().info(f"{self.color_list}")
 
-                # move_service 호출
+                # --- move_node 호출 ---
                 move_req = Move.Request()
                 move_req.result = str(self.color_list)
                 future2 = self.move_cli.call_async(move_req)
@@ -69,34 +62,28 @@ class ChatClient(Node):
 
             else:
                 self.get_logger().warn(f"chat_service 실패: {response.message}")
-                # 실패해도 다시 입력 요청
-                self.call_chat_service()
-
         except Exception as e:
             self.get_logger().error(f"chat_service 예외: {e}")
-            self.call_chat_service()
 
-    # === move_service 응답 처리 ===
+
     def handle_move_response(self, future):
         try:
             response = future.result()
             if response.success:
                 self.get_logger().info(f"[move_service 완료] {response.feedback}")
+                self.color_list = []
             else:
                 self.get_logger().warn(f"move_service 실패: {response.feedback}")
+                self.color_list = []
         except Exception as e:
             self.get_logger().error(f"move_service 예외: {e}")
 
-        # move 끝나면 다시 chat_service 호출
-        self.call_chat_service()
 
-    
 def main(args=None):
     rclpy.init(args=args)
     node = ChatClient()
     rclpy.spin(node)
     rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
