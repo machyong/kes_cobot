@@ -32,6 +32,8 @@ setup(
             'robot_move = color_roi_detector.robot_move:main',
             'chat_node = color_roi_detector.chat_node:main',
             'find_robot_coord = color_roi_detector.find_robot_coord:main',
+            'chat_gui_pyqt = color_roi_detector.chat_gui_pyqt:main',
+            'get_robot_pose = color_roi_detector.get_robot_pose:main',
         ],
     },
 )
