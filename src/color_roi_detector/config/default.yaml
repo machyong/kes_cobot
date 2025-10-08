@@ -1,10 +1,10 @@
 color_roi_node:
   ros__parameters:
     image_topic: "/camera/camera/color/image_raw"
-    roi_x: 450
-    roi_y: 150
-    roi_w: 20
-    roi_h: 20
+    roi_x: 250
+    roi_y: 75
+    roi_w: 220
+    roi_h: 150
     min_ratio: 0.02
     blur_kernel: 5
 

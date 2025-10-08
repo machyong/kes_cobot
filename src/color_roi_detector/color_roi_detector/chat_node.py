@@ -3,6 +3,8 @@ import rclpy
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 from std_msgs.msg import String
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+
 
 class ChatServer(Node):
     def __init__(self):
