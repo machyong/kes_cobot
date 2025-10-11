@@ -31,7 +31,7 @@ class ColorBlockPublisher(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
         # ROI
-        x, y, w, h = 411, 2, 560, 315
+        x, y, w, h = 531, 50, 435, 330
         roi = frame[y:y+h, x:x+w]
 
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
