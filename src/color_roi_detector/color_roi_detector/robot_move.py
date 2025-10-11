@@ -47,19 +47,19 @@ class MoveServiceServer(Node):
         self.get_logger().info(f"gripper open")
         self.mc.set_gripper_value(100,50,1)
         time.sleep(1)
-        target_point = xy_list + [250.] + [0.,180.,0.]
+        target_point = xy_list + [250.] + [0.,180.,theta]
         # 로봇 움직임
         self.mc.send_coords(target_point, speed = 50, mode = 0)
         self.get_logger().info(f"move to point")
         time.sleep(5)
 
-        target_point2 = xy_list + [180.] + [0.,180.,0.]
+        target_point2 = xy_list + [180.] + [0.,180.,theta]
         # 로봇 움직임
         self.mc.send_coords(target_point2, speed = 20, mode = 0)
         self.get_logger().info(f"move to point")
         time.sleep(2)
 
-        target_point3 = xy_list + [250.] + [0.,180.,0.]
+        target_point3 = xy_list + [250.] + [0.,180.,theta]
         # 로봇 움직임
         self.mc.send_coords(target_point2, speed = 20, mode = 0)
         self.get_logger().info(f"move to point")
