@@ -12,7 +12,7 @@ class ChatClient(Node):
 
         # ===== 1) 호모그래피 행렬(예시값) =====
         pts_pixel = np.array([[440.0, 0.], [440.0, 247.0], [0.0, 247.0], [0.0,0.0]], dtype=np.float32)
-        pts_robot = np.array([[178.4, 108.5], [305.1, 108.5], [305.1, -105.9], [178.4, -105.9]], dtype=np.float32)
+        pts_robot = np.array([[188.4, 100.5], [315.1, 100.5], [315.1, -105.9], [188.4, -105.9]], dtype=np.float32)
         self.H, _ = cv2.findHomography(pts_pixel, pts_robot)
 
         # 1) chat_service 클라이언트

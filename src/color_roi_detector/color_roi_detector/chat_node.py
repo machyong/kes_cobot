@@ -23,9 +23,11 @@ class ChatServer(Node):
     def color_callback(self, msg, color):
         self.block_info[color] = msg.data
     def handle_chat(self, request, response):
-        user_text = input("[chat_service] 색 입력: ")
+        user_text = input("[chat_service]  \n 1: 빨간색 \n 2: 노란색 \n 3: 초록색\n색 입력:")
+        set_color = {'1': "빨간색", '2': "노란색", '3': "초록색"}
+        color = set_color.get(user_text)
         topic_dict = {"빨간색":"red", "파란색":"blue", "노란색":"yellow", "초록색":"green"}
-        color_key = topic_dict.get(user_text)
+        color_key = topic_dict.get(color)
         if color_key is None:
             response.success = False
             response.message = "(지원하지 않는 색)"

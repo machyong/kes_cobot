@@ -25,7 +25,7 @@ class MoveServiceServer(Node):
         # home위치 이동
         self.home = [90,0,-90,0,90,0]
         self.mc.send_angles(self.home, 50)
-
+        self.pre_target = [0,0,-90,0,90]
         self.trash = [130,0,-90,0,90,0]
 
     def callback(self, request, response):
@@ -40,19 +40,30 @@ class MoveServiceServer(Node):
         theta = float(coo_list[1])
         xy_list = [x2,y2]
 
-        ready_point = self.home.copy()
-        ready_point[-1] = theta
+        ready_point = self.pre_target + [theta]
         self.get_logger().info(f"각도변화 확인: {ready_point}, theta값: {theta}")
         self.mc.send_angles(ready_point, 50)
         time.sleep(3)
         self.get_logger().info(f"gripper open")
-        self.mc.set_gripper_value(80,50,1)
+        self.mc.set_gripper_value(100,50,1)
         time.sleep(1)
-        target_point = xy_list + [180.] + [0.,180.,0.]
+        target_point = xy_list + [250.] + [0.,180.,0.]
         # 로봇 움직임
         self.mc.send_coords(target_point, speed = 50, mode = 0)
         self.get_logger().info(f"move to point")
         time.sleep(5)
+
+        target_point2 = xy_list + [180.] + [0.,180.,0.]
+        # 로봇 움직임
+        self.mc.send_coords(target_point2, speed = 20, mode = 0)
+        self.get_logger().info(f"move to point")
+        time.sleep(2)
+
+        target_point3 = xy_list + [250.] + [0.,180.,0.]
+        # 로봇 움직임
+        self.mc.send_coords(target_point2, speed = 20, mode = 0)
+        self.get_logger().info(f"move to point")
+        time.sleep(2)
 
         self.get_logger().info(f"gripper close")
         self.mc.set_gripper_value(45,50,1)
@@ -62,7 +73,7 @@ class MoveServiceServer(Node):
         self.mc.send_angles(self.trash, 50)
         time.sleep(3)
         self.get_logger().info(f"gripper open")
-        self.mc.set_gripper_value(80,50,1)
+        self.mc.set_gripper_value(100,50,1)
         self.get_logger().info(f"물체 버림")
         time.sleep(1)
         
