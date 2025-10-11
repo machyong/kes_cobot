@@ -31,7 +31,7 @@ class ColorBlockPublisher(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
         # ROI
-        x, y, w, h = 531, 50, 435, 330
+        x, y, w, h = 583, 33, 440, 247
         roi = frame[y:y+h, x:x+w]
 
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -105,13 +105,22 @@ class ColorBlockPublisher(Node):
                 pub.publish(msg_out)
                 self.get_logger().info(f"Published on /{c}_block: {msg_out.data}")
 
+        cv2.imshow("ROI", roi)
+        # cv2.imshow("Original Frame", frame)
+        cv2.waitKey(1)
+
 
 def main(args=None):
     rclpy.init(args=args)
     node = ColorBlockPublisher()
-    rclpy.spin(node)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     node.destroy_node()
     rclpy.shutdown()
+    cv2.destroyAllWindows()   # ← 여기 추가
+
 
 if __name__ == '__main__':
     main()

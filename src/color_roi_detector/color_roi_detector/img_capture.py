@@ -53,7 +53,7 @@ class CameraSubscriber(Node):
 
         elif key == ord('S'):  # 전체 프레임 저장
             filename = os.path.join(
-                self.save_dir, f"frame_{int(time.time())}.png"
+                self.save_dir, f"capture.png"
             )
             cv2.imwrite(filename, self.frame)
             self.get_logger().info(f"전체 프레임 저장됨: {filename}")
