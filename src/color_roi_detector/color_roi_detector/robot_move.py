@@ -44,29 +44,35 @@ class MoveServiceServer(Node):
         ready_point[-1] = theta
         self.get_logger().info(f"각도변화 확인: {ready_point}, theta값: {theta}")
         self.mc.send_angles(ready_point, 50)
-        time.sleep(1.5)
+        time.sleep(3)
         self.get_logger().info(f"gripper open")
         self.mc.set_gripper_value(80,50,1)
-        time.sleep(0.5)
+        time.sleep(1)
         target_point = xy_list + [180.] + [0.,180.,0.]
         # 로봇 움직임
         self.mc.send_coords(target_point, speed = 50, mode = 0)
         self.get_logger().info(f"move to point")
-        time.sleep(1.5)
+        time.sleep(5)
 
         self.get_logger().info(f"gripper close")
         self.mc.set_gripper_value(45,50,1)
+        time.sleep(1)
 
         # trash point
         self.mc.send_angles(self.trash, 50)
-        time.sleep(1.5)
+        time.sleep(3)
         self.get_logger().info(f"gripper open")
         self.mc.set_gripper_value(80,50,1)
-        time.sleep(0.5)
         self.get_logger().info(f"물체 버림")
+        time.sleep(1)
+        
 
         self.mc.send_angles(self.home, 50)
         self.get_logger().info(f"대기상태")
+        time.sleep(3)
+        self.get_logger().info(f"gripper close")
+        self.mc.set_gripper_value(45,50,1)
+
         # 응답 설정
         response.success = True
         response.feedback = f"좌표 {request.result} 잘 받았습니다."
