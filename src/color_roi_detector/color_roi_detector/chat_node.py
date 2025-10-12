@@ -4,7 +4,7 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 from std_msgs.msg import String
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-
+from mycobot_interfaces.srv import Move
 
 class ChatServer(Node):
     def __init__(self):
@@ -15,19 +15,23 @@ class ChatServer(Node):
         # self.block_info = ""
         self.block_info = {"red":"", "blue":"", "yellow":"", "green":""}
 
-        self.create_subscription(String, "/red_block", lambda msg: self.color_callback(msg, "red"), 1)
-        self.create_subscription(String, "/blue_block", lambda msg: self.color_callback(msg, "blue"), 1)
-        self.create_subscription(String, "/yellow_block", lambda msg: self.color_callback(msg, "yellow"), 1)
-        self.create_subscription(String, "/green_block", lambda msg: self.color_callback(msg, "green"), 1)
+        # self.create_subscription(String, "/red_block", lambda msg: self.color_callback(msg, "red"), 1)
+        # self.create_subscription(String, "/blue_block", lambda msg: self.color_callback(msg, "blue"), 1)
+        # self.create_subscription(String, "/yellow_block", lambda msg: self.color_callback(msg, "yellow"), 1)
+        # self.create_subscription(String, "/green_block", lambda msg: self.color_callback(msg, "green"), 1)
 
-    def color_callback(self, msg, color):
-        self.block_info[color] = msg.data
+        self.color_block = ''
+
+    # def color_callback(self, msg, color):
+    #     self.block_info[color] = msg.data
     def handle_chat(self, request, response):
         user_text = input("[chat_service]  \n 1: 빨간색 \n 2: 노란색 \n 3: 초록색\n색 입력:")
         set_color = {'1': "빨간색", '2': "노란색", '3': "초록색"}
         color = set_color.get(user_text)
-        topic_dict = {"빨간색":"red", "파란색":"blue", "노란색":"yellow", "초록색":"green"}
+        topic_dict = {"빨간색":"/red", "파란색":"/blue", "노란색":"/yellow", "초록색":"/green"}
         color_key = topic_dict.get(color)
+        self.color_block = color_key + '_block'
+
         if color_key is None:
             response.success = False
             response.message = "(지원하지 않는 색)"
@@ -36,8 +40,13 @@ class ChatServer(Node):
             response.message = "블록간 간격이 너무 좁습니다."
         else:
             response.success = True
-            response.message = self.block_info[color_key]
+            response.message = self.color_block
         return response
+    
+    def get_color(self):
+        req = Trigger.Request()
+        rclpy.spin_until_future_complete(self, self.future)
+        return self.future.result()
 
 def main(args=None):
     rclpy.init(args=args)

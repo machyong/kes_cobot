@@ -19,6 +19,7 @@ class ChatClient(Node):
         self.chat_cli = self.create_client(Trigger, 'chat_service')
         while not self.chat_cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('chat_service 대기중...')
+        
 
         # 2) move_service 클라이언트
         self.move_cli = self.create_client(Move, 'move_service')
@@ -41,41 +42,15 @@ class ChatClient(Node):
         try:
             response = future.result()
             if response.success:
-                # chat_service 응답: ex) "/red_block"
-                service_name = response.message.strip()
-                self.get_logger().info(f"[chat_service 응답] 선택된 서비스: {service_name}")
-
-                # ✅ find_angle 서비스 호출
-                cli = self.create_client(Trigger, service_name)
-                while not cli.wait_for_service(timeout_sec=1.0):
-                    self.get_logger().info(f"{service_name} 대기중...")
-
-                req = Trigger.Request()
-                future2 = cli.call_async(req)
-                future2.add_done_callback(self.handle_find_angle_response)
-
-            else:
-                self.get_logger().warn(f"chat_service 실패: {response.message}")
-                self.call_chat_service()
-
-        except Exception as e:
-            self.get_logger().error(f"chat_service 예외: {e}")
-            self.call_chat_service()
-
-    def handle_find_angle_response(self, future):
-        try:
-            result = future.result()
-            if result and result.success:
-                self.get_logger().info(f"[find_angle 응답] {result.message}")
-
-                # 문자열 파싱
-                k2 = result.message.split("/")
+                self.get_logger().info(f"[chat_service 응답] {response.message}")
+                # 응답 문자열 파싱
                 self.color_list = []
+                k2 = response.message.split("/")
                 for i in range(3):
                     a = k2[i].replace(' ', '').split(":")[-1].strip('(').strip(")")
                     self.color_list.append(a)
                 m, n = self.color_list[0].split(',')
-
+                print(1111)
                 # 픽셀 → 로봇 좌표 변환
                 u, v = int(m), int(n)
                 uv_h = np.array([[[u, v]]], dtype=np.float32)
@@ -89,13 +64,17 @@ class ChatClient(Node):
                 # move_service 호출
                 move_req = Move.Request()
                 move_req.result = str(self.color_list)
-                future3 = self.move_cli.call_async(move_req)
-                future3.add_done_callback(self.handle_move_response)
-            else:
-                self.get_logger().warn(f"find_angle 실패 또는 응답 없음")
-        except Exception as e:
-            self.get_logger().error(f"find_angle 예외: {e}")
+                future2 = self.move_cli.call_async(move_req)
+                future2.add_done_callback(self.handle_move_response)
 
+            else:
+                self.get_logger().warn(f"chat_service 실패: {response.message}")
+                # 실패해도 다시 입력 요청
+                self.call_chat_service()
+
+        except Exception as e:
+            self.get_logger().error(f"chat_service 예외: {e}")
+            self.call_chat_service()
 
     # === move_service 응답 처리 ===
     def handle_move_response(self, future):
