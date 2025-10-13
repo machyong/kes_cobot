@@ -21,7 +21,7 @@ class ColorBlockPublisher(Node):
         # 카메라 구독
         self.subscription = self.create_subscription(
             Image,
-            '/camera/camera/color/image_raw',
+            '/camera/color/image_raw',
             self.image_callback,
             10)
         self.bridge = CvBridge()
@@ -31,7 +31,7 @@ class ColorBlockPublisher(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
         # ROI
-        x, y, w, h = 525, 270, 210, 130
+        x, y, w, h = 481, 51, 450, 250
         roi = frame[y:y+h, x:x+w]
 
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
