@@ -34,6 +34,14 @@ setup(
             'find_robot_coord = color_roi_detector.find_robot_coord:main',
             'chat_gui_pyqt = color_roi_detector.chat_gui_pyqt:main',
             'get_robot_pose = color_roi_detector.get_robot_pose:main',
+            'calibration_click = color_roi_detector.calibration_click:main',
+            'roi_adjuster = color_roi_detector.roi_adjuster:main',
+            'hsv_tuner = color_roi_detector.hsv_tuner:main',  # ✅ 이거 있는지 확인
+            'test_move = color_roi_detector.test_move:main',
+            'calibration_robot = color_roi_detector.calibration_robot:main',
+            'calibration_gui = color_roi_detector.calibration_gui:main',
+            'interactive_calibration = color_roi_detector.interactive_calibration:main',
+            'calibration_move = color_roi_detector.calibration_move:main',
         ],
     },
 )

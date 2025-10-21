@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from std_srvs.srv import Trigger
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
+import math
+import os
+
+class ColorBlockServer(Node):
+    def __init__(self):
+        super().__init__('color_block_server')
+
+        self.bridge = CvBridge()
+        self.latest_color_image = None
+        self.latest_depth_image = None
+
+        # ===== ROI 설정 =====
+        self.roi_x = 440
+        self.roi_y = 280
+        self.roi_w = 530
+        self.roi_h = 220
+
+        # ===== 카메라/그리퍼/각도 보정 파라미터 =====
+        self.camera_height = 690.0      # 바닥→카메라(mm)
+        self.gripper_length = 70.0      # TCP→그리퍼 끝(mm)
+        self.ANGLE_OFFSET_DEG = 0.0     # 카메라/툴 장착 보정(필요시 ±90 등)
+
+        # ===== 각도 스냅 옵션(필요 시만 True) =====
+        self.USE_ANGLE_SNAP = False
+        self.SNAP_WINDOW_DEG = 15.0
+
+        # ===== Depth 검증/튜닝 =====
+        self.depth_min_valid = 300.0
+        self.depth_max_valid = 680.0
+        self.block_height_min = 10.0
+
+        # 현장 편차 보정(기존 -20mm 사용)
+        self.DEPTH_SHIFT = -20.0
+
+        # 컬러→Depth 정렬 픽셀 보정(필요시 ±1~2 조정)
+        self.DEPTH_DX = 0
+        self.DEPTH_DY = 0
+
+        # 픽킹 Z(고정)
+        self.FIXED_PICKING_HEIGHT = 165.0
+
+        # ===== 왜곡 보정(undistort) =====
+        self.enable_undistort = True
+        self.strict_need_calib = False   # ★ 보정파일 없어도 진행하도록 변경
+        self.K, self.D = None, None
+        self._map1, self._map2 = None, None
+
+        # 중심 좌표 산출 방식을 minAreaRect 중심으로(더 견고)
+        self.USE_RECT_CENTER = True
+
+        # 마스크 안정화 커널 (3x3로 완화)
+        self.morph_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+
+        # 구독
+        self.color_subscription = self.create_subscription(
+            Image, '/camera/color/image_raw', self.color_image_callback, 10
+        )
+        self.depth_subscription = self.create_subscription(
+            Image, '/camera/depth/image_rect_raw', self.depth_image_callback, 10
+        )
+
+        # 서비스
+        self.srv_red    = self.create_service(Trigger, '/red_block',    self.handle_red)
+        self.srv_yellow = self.create_service(Trigger, '/yellow_block', self.handle_yellow)
+        self.srv_green  = self.create_service(Trigger, '/green_block',  self.handle_green)
+        self.srv_blue   = self.create_service(Trigger, '/blue_block',   self.handle_blue)
+        self.srv_orange = self.create_service(Trigger, '/orange_block', self.handle_orange)
+
+        # 보정파일 로드
+        self._try_load_calibration()
+
+        self.get_logger().info("🎨 color_block_server 준비 완료")
+        self.get_logger().info("=" * 60)
+        self.get_logger().info(f"카메라 높이: {self.camera_height:.1f} mm, 그리퍼 길이: {self.gripper_length:.1f} mm")
+        self.get_logger().info(f"유효 Depth: {self.depth_min_valid:.1f}~{self.depth_max_valid:.1f} mm")
+        self.get_logger().info(f"DEPTH_SHIFT={self.DEPTH_SHIFT:+.1f} mm, DEPTH_DX/DY=({self.DEPTH_DX},{self.DEPTH_DY}) px")
+        self.get_logger().info(f"픽킹 Z(고정): {self.FIXED_PICKING_HEIGHT:.1f} mm")
+        self.get_logger().info(f"ANGLE_OFFSET_DEG: {self.ANGLE_OFFSET_DEG:+.1f}°, ANGLE_SNAP={self.USE_ANGLE_SNAP}±{self.SNAP_WINDOW_DEG:.0f}°")
+        self.get_logger().info(f"Undistort 사용: {bool(self.K is not None and self.D is not None)} (strict={self.strict_need_calib})")
+        self.get_logger().info(f"중심좌표: {'minAreaRect center' if self.USE_RECT_CENTER else 'moments center'}")
+        self.get_logger().info("=" * 60)
+
+    # ---------- 콜백 ----------
+    def color_image_callback(self, msg):
+        img = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        self.latest_color_image = img
+        # undistort 맵 준비(최초1회)
+        self._ensure_undistort_map(img)
+
+    def depth_image_callback(self, msg):
+        self.latest_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+
+    # ---------- 보정/언디스토트 유틸 ----------
+    def _try_load_calibration(self):
+        try:
+            if os.path.exists("camera_K.npy") and os.path.exists("camera_D.npy"):
+                self.K = np.load("camera_K.npy")
+                self.D = np.load("camera_D.npy")
+                if not (self.K.shape == (3, 3) and self.D.size in [4, 5, 8]):
+                    self.get_logger().warn("⚠️ 보정파일 형식 불일치 → undistort 비활성화")
+                    self.K, self.D = None, None
+            else:
+                if self.strict_need_calib:
+                    self.get_logger().error("❌ 보정파일 없음(camera_K.npy, camera_D.npy). strict 모드로 감지 중단.")
+                else:
+                    self.get_logger().warn("ℹ️ 보정파일 없음 → 원본으로 진행(비권장)")
+        except Exception as e:
+            self.get_logger().error(f"보정파일 로드 실패: {e}")
+            self.K, self.D = None, None
+
+    def _ensure_undistort_map(self, img_bgr):
+        if not (self.enable_undistort and self.K is not None and self.D is not None):
+            return
+        if self._map1 is None or self._map2 is None:
+            h, w = img_bgr.shape[:2]
+            self._map1, self._map2 = cv2.initUndistortRectifyMap(
+                self.K, self.D, None, self.K, (w, h), cv2.CV_16SC2
+            )
+            self.get_logger().info(f"✅ undistort 맵 준비: {w}x{h}")
+
+    def _undistort_if_ready(self, img_bgr):
+        if not self.enable_undistort:
+            return img_bgr
+        if self.K is None or self.D is None:
+            # ★ 보정파일 없어도 원본으로 진행 (감지 중단 금지)
+            return img_bgr
+        if self._map1 is None or self._map2 is None:
+            return img_bgr
+        return cv2.remap(img_bgr, self._map1, self._map2, cv2.INTER_LINEAR)
+
+    # ---------- 유틸 ----------
+    def validate_depth(self, depth_mm, x, y):
+        self.get_logger().info(f"🔍 Depth 검증: 측정 {depth_mm:.1f} mm @ ({x},{y})")
+        if depth_mm <= 0:
+            return False, None, "Depth가 0 이하"
+        if depth_mm < self.depth_min_valid:
+            return False, None, f"Depth가 너무 작음({depth_mm:.1f} < {self.depth_min_valid:.1f})"
+        if depth_mm >= self.camera_height:
+            return False, None, f"Depth가 카메라 높이 이상({depth_mm:.1f} ≥ {self.camera_height:.1f})"
+        height_from_floor = self.camera_height - depth_mm
+        if height_from_floor < self.block_height_min:
+            return False, None, f"블록 높이가 너무 낮음({height_from_floor:.1f} < {self.block_height_min:.1f})"
+        self.get_logger().info("   ✅ 검증 통과")
+        return True, depth_mm, None
+
+    def _angle_snap_0_90(self, a_deg):
+        if not self.USE_ANGLE_SNAP:
+            return a_deg
+        a = ((a_deg + 180.0) % 360.0) - 180.0
+        if abs(a) <= self.SNAP_WINDOW_DEG:
+            return 0.0
+        if abs(abs(a) - 90.0) <= self.SNAP_WINDOW_DEG:
+            return 90.0 if a >= 0 else -90.0
+        return a_deg
+
+    def compute_angle_deg_from_rect(self, rect):
+        (cx, cy), (w, h), theta = rect  # theta ∈ [-90, 0)
+        if w < h:
+            theta += 90.0
+        angle = (theta + self.ANGLE_OFFSET_DEG) % 180.0
+        return self._angle_snap_0_90(angle)
+
+    def _color_mask(self, hsv, color_name: str):
+        if color_name == 'red':
+            mask1 = cv2.inRange(hsv, np.array([0, 120, 100]),   np.array([10, 255, 255]))
+            mask2 = cv2.inRange(hsv, np.array([170, 120, 100]), np.array([180, 255, 255]))
+            mask = cv2.bitwise_or(mask1, mask2)
+        elif color_name == 'yellow':
+            mask = cv2.inRange(hsv, np.array([20, 100, 120]), np.array([35, 255, 255]))
+        elif color_name == 'green':
+            mask = cv2.inRange(hsv, np.array([40, 80, 80]),   np.array([85, 255, 255]))
+        elif color_name == 'blue':
+            mask = cv2.inRange(hsv, np.array([85, 100, 100]), np.array([130, 255, 255]))
+        elif color_name == 'orange':
+            mask = cv2.inRange(hsv, np.array([8, 150, 120]),  np.array([20, 255, 255]))
+        else:
+            return None
+        # 마스크 안정화(노이즈 제거/구멍 메움) - 3x3 완화
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  self.morph_kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.morph_kernel, iterations=1)
+        return mask
+
+    def detect_color(self, color_name):
+        # 입력 확인
+        if self.latest_color_image is None:
+            self.get_logger().warn("RGB 이미지 없음")
+            return None, None, None, None
+        if self.latest_depth_image is None:
+            self.get_logger().warn("Depth 이미지 없음")
+            return None, None, None, None
+
+        # 컬러 왜곡 보정
+        color = self._undistort_if_ready(self.latest_color_image)
+        if color is None:
+            self.get_logger().error("❌ 보정파일 없음(strict 모드): 감지 중단")
+            return None, None, None, None
+
+        # ROI 추출(경계 보호)
+        h, w = color.shape[:2]
+        rx1 = int(np.clip(self.roi_x, 0, w-1))
+        ry1 = int(np.clip(self.roi_y, 0, h-1))
+        rx2 = int(np.clip(self.roi_x + self.roi_w, 0, w))
+        ry2 = int(np.clip(self.roi_y + self.roi_h, 0, h))
+        if rx2 <= rx1 or ry2 <= ry1:
+            self.get_logger().error("ROI 범위가 유효하지 않습니다.")
+            return None, None, None, None
+        roi = color[ry1:ry2, rx1:rx2]
+
+        # HSV & 마스크
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        mask = self._color_mask(hsv, color_name)
+        if mask is None:
+            return None, None, None, None
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            self.get_logger().warn(f"{color_name}: 윤곽 없음")
+            return None, None, None, None
+
+        largest = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest)
+        # ★ area 컷 완화(100 → 80)
+        if area < 80:
+            self.get_logger().warn(f"{color_name}: 면적 너무 작음({area:.1f})")
+            return None, None, None, None
+
+        # 중심 좌표: minAreaRect 중심(더 견고) 또는 moments
+        rect = cv2.minAreaRect(largest)
+        if self.USE_RECT_CENTER:
+            (rcx, rcy) = rect[0]  # float
+            cx = int(round(rcx))
+            cy = int(round(rcy))
+        else:
+            M = cv2.moments(largest)
+            if M['m00'] == 0:
+                return None, None, None, None
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+
+        abs_x = rx1 + cx
+        abs_y = ry1 + cy
+
+        # 각도 표준화
+        angle_deg = self.compute_angle_deg_from_rect(rect)
+
+        # Depth ROI (11x11) + 정렬 보정(픽셀 오프셋)
+        dh, dw = self.latest_depth_image.shape[:2]
+        qx = abs_x + self.DEPTH_DX
+        qy = abs_y + self.DEPTH_DY
+        if not (0 <= qx < dw and 0 <= qy < dh):
+            self.get_logger().warn(f"Depth 정렬 의심: depth({dw}x{dh}), query=({qx},{qy})")
+
+        y1 = max(0, qy - 5); y2 = min(dh, qy + 6)
+        x1 = max(0, qx - 5); x2 = min(dw, qx + 6)
+        depth_roi = self.latest_depth_image[y1:y2, x1:x2]
+        valid_depths = depth_roi[depth_roi > 0]
+        if valid_depths.size == 0:
+            self.get_logger().warn(f"{color_name}: Depth 샘플 없음({x1}:{x2},{y1}:{y2})")
+            return None, None, None, None
+
+        depth_mm = float(np.median(valid_depths)) + self.DEPTH_SHIFT
+        self.get_logger().info(
+            f"📊 {color_name} depth 중앙값: {depth_mm:.1f} mm "
+            f"(roi {x1}:{x2}, {y1}:{y2}, samples={valid_depths.size}, shift={self.DEPTH_SHIFT:+.1f} mm, dxy=({self.DEPTH_DX},{self.DEPTH_DY}))"
+        )
+
+        # Depth 검증
+        ok, depth_mm_valid, err = self.validate_depth(depth_mm, abs_x, abs_y)
+        if not ok:
+            self.get_logger().error(f"{color_name}: Depth 검증 실패: {err}")
+            return None, None, None, None
+
+        # 결과
+        self.get_logger().info(
+            f"✅ {color_name}: 픽셀({abs_x},{abs_y}), 각도 {angle_deg:.1f}°, 픽킹Z {self.FIXED_PICKING_HEIGHT:.1f}"
+        )
+        return abs_x, abs_y, angle_deg, self.FIXED_PICKING_HEIGHT
+
+    # ---------- 서비스 핸들러 ----------
+    def _handle_common(self, color_key_kr: str, color_key_en: str, response):
+        self.get_logger().info(f"{color_key_kr} 요청")
+        x, y, angle, depth = self.detect_color(color_key_en)
+        if x is None:
+            response.success = False
+            response.message = f"{color_key_kr} 블록 감지 실패"
+            return response
+        response.success = True
+        response.message = f"Center:({x},{y})/Angle:{angle:.1f}/Depth:{depth:.1f}/picking:{color_key_kr}"
+        return response
+
+    def handle_red(self, req, resp):    return self._handle_common("빨간색", "red", resp)
+    def handle_yellow(self, req, resp): return self._handle_common("노란색", "yellow", resp)
+    def handle_green(self, req, resp):  return self._handle_common("초록색", "green", resp)
+    def handle_blue(self, req, resp):   return self._handle_common("파란색", "blue", resp)
+    def handle_orange(self, req, resp): return self._handle_common("주황색", "orange", resp)
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = ColorBlockServer()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
